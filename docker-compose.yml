@@ -2,10 +2,12 @@ services:
   db:
     image: postgres:15
     container_name: smartpantry-db
+    command: ["postgres", "-c", "timezone=UTC"]
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: pass
       POSTGRES_DB: smartpantry
+      TZ: UTC
     ports:
       - "5432:5432"
     volumes:
@@ -30,6 +32,8 @@ services:
   app:
     build: .
     container_name: smartpantry-api
+    environment:
+      TZ: UTC
     ports:
       - "8000:8000"
     env_file:
