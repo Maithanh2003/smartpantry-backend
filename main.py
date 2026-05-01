@@ -1,24 +1,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+from redis import Redis
+from redis.exceptions import RedisError
+
+from settings import get_settings
 
 app = FastAPI(title="SmartPantry API")
+settings = get_settings()
+engine = create_engine(settings.database_url, pool_pre_ping=True)
+redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
 
-allowed_origins = [
-    "http://localhost:3000",
-    "http://localhost:5000",
-    "http://localhost:8080",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5000",
-    "http://127.0.0.1:8080",
-    "http://127.0.0.1:5173",
-    "https://mysmartpantry.duckdns.org",
-]
+allowed_origins = settings.cors_origins
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,4 +25,21 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    db_status = "ok"
+    redis_status = "ok"
+    status = "ok"
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        db_status = "error"
+        status = "degraded"
+
+    try:
+        redis_client.ping()
+    except RedisError:
+        redis_status = "error"
+        status = "degraded"
+
+    return {"status": status, "db": db_status, "redis": redis_status}
