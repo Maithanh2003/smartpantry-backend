@@ -1,9 +1,7 @@
-import uuid
 from datetime import date
 
 import sqlalchemy as sa
-from sqlalchemy import CheckConstraint, Date, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import CheckConstraint, Date, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,8 +22,8 @@ class PantryCategories(Base, TimestampMixin):
 class PantryItems(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "pantry_items"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("pantry_categories.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     quantity_value: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)

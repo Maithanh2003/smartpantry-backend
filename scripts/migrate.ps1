@@ -50,6 +50,14 @@ Run-Step -Title "Verifying generated tables" -Action {
     docker compose exec db psql -U user -d smartpantry -c "\dt" | Out-Host
 }
 
+Run-Step -Title "Seeding pantry categories" -Action {
+    docker compose exec app python -c "from app.db.session import SessionLocal; from app.db.seeds import seed_pantry_categories; db=SessionLocal(); seed_pantry_categories(db); db.close(); print('seed done')" | Out-Host
+}
+
+Run-Step -Title "Verifying pantry categories seed" -Action {
+    docker compose exec db psql -U user -d smartpantry -c "SELECT id, code, name FROM pantry_categories ORDER BY id;" | Out-Host
+}
+
 Write-Host ""
 Write-Host "Migration completed." -ForegroundColor Green
 Write-Host "Usage:"

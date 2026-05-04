@@ -22,3 +22,7 @@ class UserRepository:
         self.db.commit()
         self.db.refresh(user)
         return user
+
+    def get_by_id(self, user_id: int) -> Users | None:
+        stmt = select(Users).where(Users.id == user_id, Users.deleted_at.is_(None))
+        return self.db.execute(stmt).scalar_one_or_none()

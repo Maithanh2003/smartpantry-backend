@@ -1,7 +1,6 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, text
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool, text
 
 from alembic import context
 
@@ -64,14 +63,14 @@ def run_migrations_online() -> None:
     In this scenario we need to create an Engine
     and associate a connection with the context.
 
+    SQLAlchemy 2.0: use ``engine.begin()`` so the migration is committed when the
+    block exits successfully. ``connect()`` without an explicit commit can roll
+    back all DDL and ``alembic_version`` updates when the connection closes, so
+    ``alembic upgrade head`` logs success but the database never changes.
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = create_engine(settings.database_url, poolclass=pool.NullPool)
 
-    with connectable.connect() as connection:
+    with connectable.begin() as connection:
         connection.execute(text("SET TIME ZONE :tz"), {"tz": settings.db_timezone})
         context.configure(
             connection=connection,

@@ -1,7 +1,5 @@
-import uuid
-
-from sqlalchemy import Enum, ForeignKey, Index, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Enum, ForeignKey, Index, Integer, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -12,8 +10,8 @@ from app.db.models.mixins import TimestampMixin
 class AiRequests(Base, TimestampMixin):
     __tablename__ = "ai_requests"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     request_type: Mapped[AiRequestType] = mapped_column(
         Enum(AiRequestType, name="ai_request_type"), nullable=False, default=AiRequestType.recipe_suggestion
     )
