@@ -161,8 +161,16 @@ API prefix: `/api/v1`
 - Error:
   - `ITEM_NOT_FOUND` (wrong id, other user’s item, or soft-deleted)
 
-### GET `/api/v1/pantry-items?page=1&page_size=20`
+### GET `/api/v1/pantry-items?page=1&page_size=20&category_id=1&expiry_status=warning&source=manual&q=ca&sort_by=created_at&sort_order=desc`
 - Auth: required
+- Query params:
+  - `page`, `page_size`: pagination
+  - `category_id`: filter theo category
+  - `expiry_status`: `fresh|warning|expired`
+  - `source`: `manual|ocr_confirmed|ai_assisted`
+  - `q`: search theo `name` va `notes` (ILIKE)
+  - `sort_by`: `created_at|updated_at|expiry_date|name`
+  - `sort_order`: `asc|desc`
 - Success `200`:
 ```json
 {
@@ -188,11 +196,35 @@ API prefix: `/api/v1`
     "page": 1,
     "page_size": 20,
     "total": 1,
+    "filters": {
+      "category_id": 1,
+      "expiry_status": "warning",
+      "source": "manual",
+      "q": "ca"
+    },
+    "sort": {
+      "by": "created_at",
+      "order": "desc"
+    },
     "request_id": "uuid-string",
     "timestamp": "ISO_DATETIME"
   }
 }
 ```
+- Error:
+  - `VALIDATION_ERROR` (invalid filter/sort values)
+  - Cache backend unavailable: endpoint still works (fallback to DB query)
+
+### Redis cache cho Pantry list
+- Scope: chi ap dung cho `GET /api/v1/pantry-items` (list).
+- Key: `smartpantry:pantry-list:u:{user_id}:q:{sha256(filters+pagination+sort+search)}`
+- TTL mac dinh: `120s` (configurable).
+- Cache invalidation:
+  - `POST /api/v1/pantry-items` -> xoa toan bo list cache cua user.
+  - `PATCH /api/v1/pantry-items/{item_id}` -> xoa toan bo list cache cua user.
+  - `DELETE /api/v1/pantry-items/{item_id}` -> xoa toan bo list cache cua user.
+- Ownership-safe:
+  - key co `user_id`, repository query van bat buoc `user_id` + `deleted_at IS NULL`.
 
 ### PATCH `/api/v1/pantry-items/{item_id}`
 - Auth: required

@@ -1,16 +1,16 @@
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.requests import Request
+from redis.exceptions import RedisError
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-from redis import Redis
-from redis.exceptions import RedisError
+from starlette.requests import Request
 
 from app.api.v1._responses import error_response, format_validation_error_fields
 from app.api.v1.auth import router as auth_router
 from app.api.v1.pantry import router as pantry_router
 from app.api.v1.pantry_categories import router as pantry_categories_router
+from app.core.redis_client import get_redis_client
 from settings import get_settings
 
 app = FastAPI(title="SmartPantry API")
@@ -22,7 +22,7 @@ async def request_validation_exception_handler(request: Request, exc: RequestVal
     primary, fields = format_validation_error_fields(exc.errors())
     return error_response("VALIDATION_ERROR", primary, 400, fields=fields)
 engine = create_engine(settings.database_url, pool_pre_ping=True)
-redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
+redis_client = get_redis_client()
 
 allowed_origins = settings.cors_origins
 
