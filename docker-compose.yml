@@ -29,11 +29,47 @@ services:
       timeout: 5s
       retries: 5
 
+  # S3-compatible object storage for local dev (same API as R2).
+  # Console: http://127.0.0.1:9001  (user/pass see environment below)
+  minio:
+    image: minio/minio:latest
+    container_name: smartpantry-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  # Waits for MinIO S3 API then creates bucket (image minio/minio may not include curl/wget).
+  minio-init:
+    image: minio/mc:latest
+    container_name: smartpantry-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # MinIO may not listen yet when this container starts; alias set probes the API and fails until then.
+        until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done
+        until mc ready local; do sleep 1; done
+        mc mb local/smartpantry-assets --ignore-existing
+    restart: "no"
+
   app:
     build: .
     container_name: smartpantry-api
     environment:
       TZ: UTC
+      # Defaults for local MinIO if .env omits these (otherwise boto3 targets AWS S3).
+      OBJECT_STORAGE_ENDPOINT_URL: ${OBJECT_STORAGE_ENDPOINT_URL:-http://minio:9000}
+      OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-minioadmin}
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:-minioadmin}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-smartpantry-assets}
     ports:
       - "8000:8000"
     env_file:
@@ -43,5 +79,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
 volumes:
   postgres_data:
+  minio_data:

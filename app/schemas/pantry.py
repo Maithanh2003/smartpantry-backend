@@ -68,5 +68,6 @@ class PantryItemResponse(BaseModel):
     expiry_date: date | None
     expiry_status: str
     image_path: str | None
+    image_url: str | None = None
     created_at: datetime
     updated_at: datetime

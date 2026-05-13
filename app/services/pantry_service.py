@@ -2,10 +2,13 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.core.media_urls import public_object_url
 from app.db.models.enums import ExpiryStatus, PantryItemSource
 from app.db.repositories.pantry_category_repository import PantryCategoryRepository
 from app.db.repositories.pantry_repository import PantryRepository
 from app.services.pantry_cache_service import PantryCacheService
+
+MAX_PANTRY_LIST_PAGE = 10_000
 
 
 def _compute_expiry_status(expiry_date: date | None) -> ExpiryStatus:
@@ -34,10 +37,13 @@ class PantryService:
         pantry_repo: PantryRepository,
         category_repo: PantryCategoryRepository | None = None,
         pantry_cache_service: PantryCacheService | None = None,
+        *,
+        image_public_base_url: str | None = None,
     ) -> None:
         self.pantry_repo = pantry_repo
         self.category_repo = category_repo
         self.pantry_cache_service = pantry_cache_service
+        self._image_public_base_url = image_public_base_url
 
     def _invalidate_user_list_cache(self, user_id: int) -> None:
         if self.pantry_cache_service is None:
@@ -57,6 +63,7 @@ class PantryService:
 
         # Server-owned: never trust client-sent expiry_status
         payload.pop("expiry_status", None)
+        payload.pop("deleted_at", None)
         expiry_date = payload.get("expiry_date")
         payload["expiry_status"] = _compute_expiry_status(expiry_date)
         raw_source = payload.get("source", PantryItemSource.manual.value)
@@ -83,6 +90,11 @@ class PantryService:
         sort_by: str = "created_at",
         sort_order: str = "desc",
     ) -> tuple[list[dict], int]:
+        if page < 1 or page > MAX_PANTRY_LIST_PAGE:
+            raise ValueError(f"page must be between 1 and {MAX_PANTRY_LIST_PAGE}")
+        if page_size < 1 or page_size > 100:
+            raise ValueError("page_size must be between 1 and 100")
+
         limit = page_size
         offset = (page - 1) * page_size
         parsed_expiry_status = None
@@ -158,16 +170,19 @@ class PantryService:
             raise ValueError("ITEM_NOT_FOUND")
         return self._serialize(item)
 
-    def update_item(self, user_id: str, item_id: str, payload: dict) -> dict:
+    def update_item(self, user_id: str, item_id: str, payload: dict) -> tuple[dict, dict]:
         item = self.pantry_repo.get_by_id_and_user(int(item_id), int(user_id))
         if not item:
             raise ValueError("ITEM_NOT_FOUND")
+
+        before = self._serialize(item)
 
         if "category_id" in payload:
             self._ensure_category(payload.get("category_id"))
 
         # Server-owned: recompute from effective expiry after patch
         payload.pop("expiry_status", None)
+        payload.pop("deleted_at", None)
         effective_expiry = payload["expiry_date"] if "expiry_date" in payload else item.expiry_date
         payload["expiry_status"] = _compute_expiry_status(effective_expiry)
 
@@ -180,17 +195,27 @@ class PantryService:
 
         item = self.pantry_repo.update(item, payload)
         self._invalidate_user_list_cache(int(user_id))
-        return self._serialize(item)
+        return self._serialize(item), before
 
-    def delete_item(self, user_id: str, item_id: str) -> None:
+    def delete_item(self, user_id: str, item_id: str) -> dict:
         item = self.pantry_repo.get_by_id_and_user(int(item_id), int(user_id))
         if not item:
             raise ValueError("ITEM_NOT_FOUND")
+        snapshot = self._serialize(item)
         self.pantry_repo.soft_delete(item)
         self._invalidate_user_list_cache(int(user_id))
+        return snapshot
 
-    @staticmethod
-    def _serialize(item) -> dict:
+    def restore_item(self, user_id: str, item_id: int) -> dict:
+        item = self.pantry_repo.get_by_id_for_user_including_deleted(item_id, int(user_id))
+        if not item:
+            raise ValueError("ITEM_NOT_FOUND")
+        restored = self.pantry_repo.restore(item)
+        self._invalidate_user_list_cache(int(user_id))
+        return self._serialize(restored)
+
+    def _serialize(self, item) -> dict:
+        path = item.image_path
         return {
             "id": item.id,
             "user_id": item.user_id,
@@ -201,9 +226,9 @@ class PantryService:
             "source": item.source.value,
             "notes": item.notes,
             "expiry_date": item.expiry_date.isoformat() if item.expiry_date else None,
-            # Always reflect business rule vs "today" (even if DB column slightly stale)
             "expiry_status": _compute_expiry_status(item.expiry_date).value,
-            "image_path": item.image_path,
+            "image_path": path,
+            "image_url": public_object_url(self._image_public_base_url, path),
             "created_at": item.created_at.isoformat(),
             "updated_at": item.updated_at.isoformat(),
         }

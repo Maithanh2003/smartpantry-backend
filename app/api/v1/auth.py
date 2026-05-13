@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_token
 from app.api.v1._responses import error_response, success_response
+from app.core.request_context import client_ip, client_user_agent
+from app.db.repositories.audit_repository import AuditRepository
 from app.db.repositories.user_repository import UserRepository
 from app.db.session import SessionLocal
 from app.schemas.auth import LoginRequest, RefreshRequest, RegisterRequest
@@ -81,13 +83,32 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     auth_service = AuthService(UserRepository(db))
+    audit = AuditRepository(db)
     try:
         result = auth_service.login(email=payload.email, password=payload.password)
+        audit.write(
+            action="LOGIN_SUCCESS",
+            actor_user_id=int(result["user"]["id"]),
+            entity_type="user",
+            entity_id=str(result["user"]["id"]),
+            after_json={"email": result["user"]["email"]},
+            ip_address=client_ip(request),
+            user_agent=client_user_agent(request),
+        )
         return success_response(result)
     except ValueError as exc:
         if str(exc) == "INVALID_CREDENTIALS":
+            audit.write(
+                action="LOGIN_FAILED",
+                actor_user_id=None,
+                entity_type="auth",
+                entity_id="-",
+                after_json={"attempted_email": payload.email.strip().lower()},
+                ip_address=client_ip(request),
+                user_agent=client_user_agent(request),
+            )
             return error_response("PERMISSION_DENIED", "Invalid email or password", status.HTTP_401_UNAUTHORIZED)
         return error_response("INTERNAL_ERROR", "Internal server error", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
